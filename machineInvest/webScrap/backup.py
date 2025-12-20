@@ -1,18 +1,18 @@
 import os
+import pandas as pd
+import numpy as np  # make sure to add
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
-from typing import Dict
 import logging  # make sure to add
 import calendar  # make sure to add
-import numpy as np  # make sure to add
 import lxml
 
-HEADERS = {"User-Agent": "tkelemen33@gmail.com"}
+#from headers import headers  # change to your own headers file or add variable in code
 
 pd.options.display.float_format = (
     lambda x: "{:,.0f}".format(x) if int(x) == x else "{:,.2f}".format(x)
 )
+
 statement_keys_map = {
     "balance_sheet": [
         "balance sheet",
@@ -66,7 +66,10 @@ statement_keys_map = {
         "consolidated statements of cash flows - southern",
     ],
 }
-def cik_matching_ticker(ticker, headers=HEADERS):
+headers = {"User-Agent": "tkelemen33@gmail.com"}
+
+
+def cik_matching_ticker(ticker, headers=headers):
     ticker = ticker.upper().replace(".", "-")
     ticker_json = requests.get(
         "https://www.sec.gov/files/company_tickers.json", headers=headers
@@ -75,13 +78,11 @@ def cik_matching_ticker(ticker, headers=HEADERS):
     for company in ticker_json.values():
         if company["ticker"] == ticker:
             cik = str(company["cik_str"]).zfill(10)
-            #print(cik)
             return cik
     raise ValueError(f"Ticker {ticker} not found in SEC database")
 
-#cik_matching_ticker("oxy")
 
-def get_submission_data_for_ticker(ticker, headers=HEADERS, only_filings_df=False):
+def get_submission_data_for_ticker(ticker, headers=headers, only_filings_df=False):
     """
     Get the data in json form for a given ticker. For example: 'cik', 'entityType', 'sic', 'sicDescription', 'insiderTransactionForOwnerExists', 'insiderTransactionForIssuerExists', 'name', 'tickers', 'exchanges', 'ein', 'description', 'website', 'investorWebsite', 'category', 'fiscalYearEnd', 'stateOfIncorporation', 'stateOfIncorporationDescription', 'addresses', 'phone', 'flags', 'formerNames', 'filings'
 
@@ -90,63 +91,84 @@ def get_submission_data_for_ticker(ticker, headers=HEADERS, only_filings_df=Fals
 
     Returns:
         json: The submissions for the company.
-
-    Raises:
-        ValueError: If ticker is not a string.
     """
     cik = cik_matching_ticker(ticker)
     headers = headers
     url = f"https://data.sec.gov/submissions/CIK{cik}.json"
     company_json = requests.get(url, headers=headers).json()
     if only_filings_df:
-        #print("1")
-        #print(pd.DataFrame(company_json["filings"]["recent"]))
         return pd.DataFrame(company_json["filings"]["recent"])
     else:
-        #print("2")
-        #print(company_json)
         return company_json
-#data = get_submission_data_for_ticker("oxy", only_filings_df=False)
-#print(data.keys())
 
 
 def get_filtered_filings(
-    ticker, ten_k=True, just_accession_numbers=False, headers=HEADERS):
+        ticker, ten_k=True, just_accession_numbers=False, headers=None
+):
+    """
+    Retrieves either 10-K or 10-Q filings for a given ticker and optionally returns just accession numbers.
+
+    Args:
+        ticker (str): Stock ticker symbol.
+        ten_k (bool): If True, fetches 10-K filings; otherwise, fetches 10-Q filings.
+        just_accession_numbers (bool): If True, returns only accession numbers; otherwise, returns full data.
+        headers (dict): Headers for HTTP request.
+
+    Returns:
+        DataFrame or Series: DataFrame of filings or Series of accession numbers.
+    """
+    # Fetch submission data for the given ticker
     company_filings_df = get_submission_data_for_ticker(
         ticker, only_filings_df=True, headers=headers
     )
-    if ten_k:
-        print("10-K")
-        df = company_filings_df[company_filings_df["form"] == "10-K"]
-    else:
-        print("10-Q")
-        df = company_filings_df[company_filings_df["form"] == "10-Q"]
+    # Filter for 10-K or 10-Q forms
+    df = company_filings_df[company_filings_df["form"] == ("10-K" if ten_k else "10-Q")]
+    # Return accession numbers if specified
     if just_accession_numbers:
-        print("Report Date and Accession Number")
         df = df.set_index("reportDate")
         accession_df = df["accessionNumber"]
         return accession_df
     else:
-
         return df
 
-#filings = get_filtered_filings("oxy", ten_k=False, just_accession_numbers=True, headers=HEADERS)
-#print(filings)
 
-def get_facts(ticker, headers=HEADERS):
+def get_facts(ticker, headers=None):
+    """
+    Retrieves company facts for a given ticker.
+
+    Args:
+        ticker (str): Stock ticker symbol.
+        headers (dict): Headers for HTTP request.
+
+    Returns:
+        dict: Company facts in JSON format.
+    """
+    # Get CIK number matching the ticker
     cik = cik_matching_ticker(ticker)
+    # Construct URL for company facts
     url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+    # Fetch and return company facts
     company_facts = requests.get(url, headers=headers).json()
     return company_facts
 
-#facts = get_facts("oxy")
-#print("facts")
-#print(facts["facts"]["us-gaap"]["AccountsPayableCurrent"]['units']['USD'])
 
-def facts_DF(ticker, headers=HEADERS):
+def facts_DF(ticker, headers=None):
+    """
+    Converts company facts into a DataFrame.
+
+    Args:
+        ticker (str): Stock ticker symbol.
+        headers (dict): Headers for HTTP request.
+
+    Returns:
+        tuple: DataFrame of facts and a dictionary of labels.
+    """
+    # Retrieve facts data
     facts = get_facts(ticker, headers)
     us_gaap_data = facts["facts"]["us-gaap"]
     df_data = []
+
+    # Process each fact and its details
     for fact, details in us_gaap_data.items():
         for unit in details["units"]:
             for item in details["units"][unit]:
@@ -155,37 +177,70 @@ def facts_DF(ticker, headers=HEADERS):
                 df_data.append(row)
 
     df = pd.DataFrame(df_data)
+    # Convert 'end' and 'start' to datetime
     df["end"] = pd.to_datetime(df["end"])
     df["start"] = pd.to_datetime(df["start"])
+    # Drop duplicates and set index
     df = df.drop_duplicates(subset=["fact", "end", "val"])
     df.set_index("end", inplace=True)
+    # Create a dictionary of labels for facts
     labels_dict = {fact: details["label"] for fact, details in us_gaap_data.items()}
     return df, labels_dict
 
 
-def annual_facts(ticker, headers=HEADERS):
+def annual_facts(ticker, headers=None):
+    """
+    Fetches and processes annual (10-K) financial facts for a given ticker.
+
+    Args:
+        ticker (str): Stock ticker symbol.
+        headers (dict): Headers for HTTP request.
+
+    Returns:
+        DataFrame: Transposed pivot table of annual financial facts.
+    """
+    # Get accession numbers for 10-K filings
     accession_nums = get_filtered_filings(
-        ticker, ten_k=True, just_accession_numbers=True
+        ticker, ten_k=True, just_accession_numbers=True, headers=headers
     )
+    # Extract and process facts data
     df, label_dict = facts_DF(ticker, headers)
+    # Filter data for 10-K filings
     ten_k = df[df["accn"].isin(accession_nums)]
     ten_k = ten_k[ten_k.index.isin(accession_nums.index)]
+    # Pivot and format the data
     pivot = ten_k.pivot_table(values="val", columns="fact", index="end")
     pivot.rename(columns=label_dict, inplace=True)
     return pivot.T
 
 
-def quarterly_facts(ticker, headers=HEADERS):
+def quarterly_facts(ticker, headers=None):
+    """
+    Fetches and processes quarterly (10-Q) financial facts for a given ticker.
+
+    Args:
+        ticker (str): Stock ticker symbol.
+        headers (dict): Headers for HTTP request.
+
+    Returns:
+        DataFrame: Transposed pivot table of quarterly financial facts.
+    """
+    # Get accession numbers for 10-Q filings
     accession_nums = get_filtered_filings(
-        ticker, ten_k=False, just_accession_numbers=True
+        ticker, ten_k=False, just_accession_numbers=True, headers=headers
     )
+    # Extract and process facts data
     df, label_dict = facts_DF(ticker, headers)
+    # Filter data for 10-Q filings
     ten_q = df[df["accn"].isin(accession_nums)]
     ten_q = ten_q[ten_q.index.isin(accession_nums.index)].reset_index(drop=False)
+    # Remove duplicate entries
     ten_q = ten_q.drop_duplicates(subset=["fact", "end"], keep="last")
+    # Pivot and format the data
     pivot = ten_q.pivot_table(values="val", columns="fact", index="end")
     pivot.rename(columns=label_dict, inplace=True)
     return pivot.T
+
 
 def save_dataframe_to_csv(dataframe, folder_name, ticker, statement_name, frequency):
     """
@@ -380,7 +435,7 @@ def extract_columns_values_and_dates_from_statement(soup):
             columns.append(column_title)
 
             # Initialize values array with NaNs
-            values = [np.nan] * len(date_time_index)
+            values = [np.NaN] * len(date_time_index)
 
             # Process each cell in the row
             for i, cell in enumerate(row.select("td.text, td.nump, td.num")):
@@ -495,7 +550,7 @@ def process_one_statement(ticker, accession_number, statement_name):
             ticker,
             accession_number,
             statement_name,
-            headers=HEADERS,
+            headers=headers,
             statement_keys_map=statement_keys_map,
         )
     except Exception as e:
@@ -545,38 +600,33 @@ def rename_statement(statement, label_dictionary):
 
 
 ticker = "AAPL"
-label_dict = get_label_dictionary(ticker, HEADERS)
+label_dict = get_label_dictionary(ticker, headers)
 accn = get_filtered_filings(
-    ticker, ten_k=True, just_accession_numbers=False, headers=HEADERS
+    ticker, ten_k=True, just_accession_numbers=False, headers=headers
 )
 acc_num = accn["accessionNumber"].iloc[2].replace("-", "")
 soup = get_statement_soup(
     ticker,
     acc_num,
     "balance_sheet",
-    headers=HEADERS,
+    headers=headers,
     statement_keys_map=statement_keys_map,
 )
+statement = process_one_statement(ticker, acc_num, "balance_sheet")
+print(rename_statement(statement, label_dict))
 
-
-"""
-This is the running part for testing
-AAPL and OXY atre the tickers
-acc_nem iloc parameter sets the range of years that are extracted
-Process on statememt "balance_sheet", "cashflow", "income_statement" drives the type of report
-"""
 
 ticker ="AAPL"
-label_dict = get_label_dictionary(ticker, HEADERS)
+label_dict = get_label_dictionary(ticker, headers)
 accn = get_filtered_filings(
-    ticker, ten_k=True, just_accession_numbers=False, headers=HEADERS
+    ticker, ten_k=True, just_accession_numbers=False, headers=headers
 )
-acc_num = accn["accessionNumber"].iloc[0].replace("-", "")
+acc_num = accn["accessionNumber"].iloc[2].replace("-", "")
 soup = get_statement_soup(
     ticker,
     acc_num,
     "balance_sheet",
-    headers=HEADERS,
+    headers=headers,
     statement_keys_map=statement_keys_map,
 )
 statement = process_one_statement(ticker, acc_num, "balance_sheet")
