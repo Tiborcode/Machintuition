@@ -566,14 +566,14 @@ acc_nem iloc parameter sets the range of years that are extracted
 Process on statememt "balance_sheet", "cashflow", "income_statement" drives the type of report
 """
 
-ticker ="AAPL"
+ticker ="OXY"
 report_list = ["balance_sheet", "cash_flow_statement", "income_statement"]
 
 accn = get_filtered_filings(
     ticker, ten_k=True, just_accession_numbers=False, headers=HEADERS
 )
 acc_num = accn["accessionNumber"].iloc[0].replace("-", "")
-
+"""
 soup = get_statement_soup(
     ticker,
     acc_num,
@@ -581,18 +581,23 @@ soup = get_statement_soup(
     headers=HEADERS,
     statement_keys_map=statement_keys_map,
 )
-statement = process_one_statement(ticker, acc_num, "balance_sheet")
-rename_statement(statement, label_dict)
 
-"""
+for report in report_list:
+    statement = process_one_statement(ticker, acc_num, report)
+    rename_statement(statement, label_dict)
+    statement_dict = statement.to_dict()
+    for value in statement_dict.values():
+        print(value)
+
 for col_name, series in statement.items():
     print(col_name)
     print(series)
-"""
 
 print("other asset: ", statement.at["Other Assets, Current", "2025-09-27 00:00:00"])
 
+
 statement_dict = statement.to_dict()
+
 for key, value in statement_dict.items():
     print(key)
     print(value)
@@ -612,4 +617,3 @@ for report in report_list:
     
     print(report)
     print(statement)
-"""
