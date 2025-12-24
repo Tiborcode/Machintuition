@@ -21,3 +21,4 @@ Web scraping:
 https://www.youtube.com/watch?v=y_tvyJCdCBo&list=PLrzhO7Uj9TLHdO4F45AA_9dq5pSLcC608
 https://github.com/GGRusty/Edgar_Video_content/blob/main/Part_6/edgar_functions.py
 https://www.youtube.com/watch?v=hYNdJxsR3_U
+https://www.youtube.com/andrejkarpathy

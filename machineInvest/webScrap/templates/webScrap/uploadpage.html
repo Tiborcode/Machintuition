@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Uploadpage</title>
+</head>
+<body>
+
+<h2>This is the uploadpage </h2>
+     {% csrf_token %}
+<h3>CashForm</h3>
+     {{ cashForm.as_p }}
+<h3>IncomeForm</h3>
+     {{ incomeForm.as_p }}
+ <h3>BalanceSheetForm</h3>
+     {{ balanceForm.as_p }}
+
+<a href="{% url 'index' %}">link to index page</a>
+</body>
+</html>
